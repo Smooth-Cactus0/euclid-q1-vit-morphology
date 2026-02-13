@@ -1,0 +1,41 @@
+# Data (large files, regenerable)
+data/raw/
+data/processed/
+data/sample/
+
+# Model checkpoints
+results/checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv/
+venv/
+
+# W&B / experiment tracking
+wandb/
+mlruns/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Secrets
+*.key
+*.pem
+credentials.*
