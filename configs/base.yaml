@@ -1,0 +1,126 @@
+# base.yaml — Euclid Q1 ViT Galaxy Morphology
+# Shared configuration for all models. Override per-model in configs/<model>.yaml.
+
+seed: 42
+
+# --- Data ---
+data:
+  catalog_path: data/raw/morphology_catalogue.parquet
+  image_dir: data/raw/images
+  split_path: data/processed/split_indices.json
+  image_type: gz_arcsinh_vis_y       # VIS + Y-band (3.8 GB tar on Zenodo)
+  input_size: 224
+  num_workers: 4
+  pin_memory: true
+
+  # Quality filter: exclude galaxies flagged by Zoobot training cuts
+  apply_training_cuts: true
+
+  # Morphology questions and their answer columns
+  # Each question's fractions sum to 1.0; NaN means the question was
+  # not asked for that galaxy (Galaxy Zoo decision tree branching).
+  morphology_questions:
+    smooth-or-featured:
+      answers: [smooth, featured-or-disk, problem]
+      parent: null                    # Asked for all galaxies
+    disk-edge-on:
+      answers: [yes, no]
+      parent: smooth-or-featured      # Only if featured
+    has-spiral-arms:
+      answers: [yes, no]
+      parent: disk-edge-on            # Only if not edge-on
+    bar:
+      answers: [strong, weak, no]
+      parent: disk-edge-on            # Only if not edge-on
+    bulge-size:
+      answers: [dominant, large, moderate, small, none]
+      parent: disk-edge-on            # Only if not edge-on
+    how-rounded:
+      answers: [round, in-between, cigar-shaped]
+      parent: smooth-or-featured      # Only if smooth
+    merging:
+      answers: [none, minor-disturbance, major-disturbance, merger]
+      parent: null                    # Asked for all galaxies
+
+  # Total output dimension = sum of all answer counts = 22
+  num_outputs: 22
+
+# --- Split ---
+split:
+  train_frac: 0.80
+  val_frac: 0.10
+  test_frac: 0.10
+  stratify_by: dominant_class         # smooth / featured / problem / ambiguous
+
+# --- Augmentation ---
+augmentation:
+  train:
+    random_horizontal_flip: true
+    random_vertical_flip: true
+    random_rotation: 360              # Galaxies have no preferred orientation
+    color_jitter:
+      brightness: 0.1
+      contrast: 0.1
+      saturation: 0.0
+      hue: 0.0
+    random_resized_crop:
+      scale: [0.85, 1.0]
+      ratio: [0.95, 1.05]
+
+  # Val/test: deterministic resize + center crop only
+  eval:
+    center_crop: true
+
+  # Normalization (ImageNet stats — fine for pretrained backbones)
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+# --- Training ---
+training:
+  loss: dirichlet_multinomial         # Match Zoobot; fallback: mse
+  optimizer: adamw
+  lr: 5.0e-5                          # Fine-tune LR
+  lr_linear_probe: 1.0e-3             # Linear probe LR (frozen backbone)
+  weight_decay: 0.01
+  batch_size: 32
+  epochs: 30
+  early_stopping:
+    patience: 5
+    monitor: val_loss
+  scheduler:
+    type: cosine
+    warmup_fraction: 0.05             # 5% of total steps
+
+  # Fine-tuning strategy
+  finetune:
+    linear_probe_epochs: 5            # Phase 1: frozen backbone
+    full_finetune_epochs: 25          # Phase 2: unfreeze all
+
+# --- TTA ---
+tta:
+  enabled: true
+  transforms:
+    - original
+    - horizontal_flip
+    - vertical_flip
+    - rotate_90
+    - rotate_180
+    - rotate_270
+
+# --- Evaluation ---
+evaluation:
+  metrics:
+    - dirichlet_multinomial_loss
+    - mse
+    - mae
+    - r2
+    - pearson
+    - spearman
+    - accuracy                        # After argmax discretization
+    - weighted_f1                     # After argmax discretization
+  per_question: true                  # Report metrics per morphology question
+  bootstrap_ci:
+    enabled: true
+    n_iterations: 1000
+    confidence: 0.95
